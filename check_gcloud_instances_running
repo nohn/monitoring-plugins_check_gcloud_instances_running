@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+PROJECT="$1"
+CHECKMACHINES="$2"
+
+HUMANOUTPUT="";
+PERFDATA="";
+OK=0
+PROBLEMS=0
+
+INSTANCELIST=$(gcloud compute instances list --filter="status:RUNNING" --project="$PROJECT") || exit 3
+
+function processinstanceCounts {
+    for instanceType in "$@"
+    do
+        INSTANCEPATTERN=$(echo "$instanceType" | cut -d ":" -f 1)
+	MININSTANCES=$(echo "$instanceType" | cut -d ":" -f 2)
+	MAXINSTANCES=$(echo "$instanceType" | cut -d ":" -f 3)
+	ACTINSTANCES=$(echo "$INSTANCELIST" | egrep -o "$INSTANCEPATTERN" -c)	
+	PERFDATA="$INSTANCEPATTERN=$ACTINSTANCES;$MININSTANCES;$MAXINSTANCES $PERFDATA"
+	if [[ $MININSTANCES -le $ACTINSTANCES ]] && [[ $ACTINSTANCES -le $MAXINSTANCES ]]; then
+	    OK=$((OK+1))
+	else
+	    HUMANOUTPUT="$HUMANOUTPUT $INSTANCEPATTERN $MININSTANCES <= $ACTINSTANCES <= $MAXINSTANCES."
+	    PROBLEMS=$((PROBLEMS+1))
+	fi
+    done
+}
+
+function processInstanceTypes {
+    for instanceTypes in $1
+    do
+        processinstanceCounts $(echo "$instanceTypes" | tr ';' ' ')
+    done
+}
+
+processInstanceTypes "$CHECKMACHINES"
+
+if [[ $PROBLEMS -gt 0 ]]; then
+    echo "CRITICAL: $HUMANOUTPUT | $PERFDATA"
+    exit 2
+else
+    echo "$OK instance types are OK | $PERFDATA"
+    exit 0
+fi
+
